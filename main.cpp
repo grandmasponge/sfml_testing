@@ -4,18 +4,6 @@
 #include <vector>
 
 //not using this yet more proof of concept
- const int map[10][10] = {
-        {1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {1, 0, 0, 0, 0, 0, 0, 0, 0, 1},
-        {1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-    };
 
 void draw_map(sf::RenderWindow *window);
 
@@ -96,35 +84,75 @@ class Bullet {
         }
         sf::CircleShape mesh;
         sf::Int32 prev = sf::Time::Zero.asMilliseconds();
-        float max_vel = 6.f;
+        int damage = 30;
+        float max_vel = 10.f;
 };
 
-class Dummy {
+class Zombie {
     public:
-        sf::Vector2f position;
-        sf::RectangleShape mesh = sf::RectangleShape(sf::Vector2f(30, 30));
-        Dummy(sf::Vector2f position) {
-            this->position = position;
-            this->mesh.setPosition(position);
-            this->mesh.setFillColor(sf::Color::Green);
-        }
-        void Collision(Bullet *bullet)
+     sf::Vector2f velocity;
+     int health;
+     sf::RectangleShape mesh = sf::RectangleShape(sf::Vector2f(30, 30));
+     float speed = 3.f;
+     Zombie()
+     {
+        this->mesh.setFillColor(sf::Color::Green);
+        this->mesh.setPosition(Spawn());
+     }
+     void update(sf::Vector2f playerpos)
+     {
+        sf::Vector2f playercenter = sf::Vector2f(playerpos.x, playerpos.y);
+        sf::Vector2f zombiedir = sf::Vector2f(playercenter - this->mesh.getPosition());
+        sf::Vector2f zombiedirnorm = sf::Vector2f(zombiedir.x / sqrt(pow(zombiedir.x, 2) + pow(zombiedir.y, 2)), zombiedir.y / sqrt(pow(zombiedir.x, 2) + pow(zombiedir.y, 2)));
+        this->mesh.move(this->speed * zombiedirnorm);
+     }
+     bool bullet_collision(Bullet *bullet)
+     {
+        if(this->mesh.getGlobalBounds().intersects(bullet->mesh.getGlobalBounds()))
         {
-            if(this->mesh.getGlobalBounds().intersects(bullet->mesh.getGlobalBounds()))
-            {
-                std::cout << "hit" << std::endl;
-            }
+            std::cout << "bullet collision" << std::endl;
+            return true;
         }
+        return false;
+     }
+    void take_damage(int damage)
+     {
+        std::cout << "zombie took damage" << std::endl;
+        this->health -= damage;
+     }
+    
+     bool player_collision(Player *player)
+     {
+        if(this->mesh.getGlobalBounds().intersects(player->mesh.getGlobalBounds()))
+        {
+            std::cout << "player collision" << std::endl;
+            return true;
+        }
+        return false;
+     }
+    sf::Vector2f Spawn()
+    {
+        //spawn off screen
+        sf::Vector2f spawn;
+        spawn.x = rand() % 50 + 800;
+        spawn.y = rand() % 50 + 600;
+        return spawn;
+    } 
+    
+    
 };
 
 Player player(sf::Vector2f(100, 100), sf::Vector2f(0, 0), sf::Vector2f(0, 0));
 std::vector<Bullet> bullets;
+std::vector<Zombie> Zombies;
 Bullet bullet;
 sf::Clock delta_clock;
+sf::Clock zombie_clock;
+Zombie zombie = Zombie();
 
 void shooting()
 {
-    if(sf::Mouse::isButtonPressed(sf::Mouse::Left) && delta_clock.getElapsedTime().asMilliseconds() - bullet.prev > 100)
+    if(sf::Mouse::isButtonPressed(sf::Mouse::Left) && delta_clock.getElapsedTime().asMilliseconds() - bullet.prev > 250)
     {
         bullet.mesh.setPosition(player.mesh.getPosition());
         bullet.current_vel = player.Aimdir * bullet.max_vel;
@@ -132,6 +160,31 @@ void shooting()
         bullet.prev = delta_clock.getElapsedTime().asMilliseconds();
     }
 }
+
+void zombie_spawn()
+{
+    if (zombie_clock.getElapsedTime().asSeconds() > 5)
+    {
+        zombie.health = 100;
+        zombie.mesh.setPosition(zombie.Spawn());
+        Zombies.push_back(zombie);
+        zombie_clock.restart();
+    }
+}
+
+void zombie_death()
+{
+    for(size_t i = 0; i < Zombies.size(); i++)
+    {
+        if(Zombies[i].health <= 0)
+        {
+            std::cout << "zombie died" << std::endl;
+            Zombies.erase(Zombies.begin() + i);
+        }
+    }
+}
+
+
 
 void cleanup()
 {
@@ -142,6 +195,11 @@ void cleanup()
             bullets.erase(bullets.begin() + i);
         }
     }
+}
+
+void remove_from_vector(size_t index)
+{
+    bullets.erase(bullets.begin() + index);
 }
 
 int main()
@@ -155,6 +213,9 @@ int main()
     {
         window.clear();
 
+        zombie_spawn();
+        zombie_death();
+
         sf::Event event;
         while (window.pollEvent(event))
         {
@@ -164,13 +225,28 @@ int main()
         player.update(sf::Vector2f(sf::Mouse::getPosition(window)));
         
         window.draw(player.mesh);
-
+    //collision and drawing bullets
         for (size_t i = 0; i < bullets.size(); i++)
         {
             bullets[i].mesh.move(bullets[i].current_vel);
-            
             window.draw(bullets[i].mesh);
-            bullets[i].mesh.move(bullets[i].current_vel);
+        }
+        //zombies stuff
+        for(size_t i = 0; i < Zombies.size(); i++)
+        {
+            for(size_t j = 0; j < bullets.size(); j++)
+            {
+                if(Zombies[i].bullet_collision(&bullets[j]))
+                {
+                    Zombies[i].take_damage(bullets[j].damage);
+                    remove_from_vector(j);
+                }
+            }
+        }
+        for (size_t i = 0; i < Zombies.size(); i++)
+        {
+            Zombies[i].update(player.mesh.getPosition());
+            window.draw(Zombies[i].mesh);
         }
         shooting();
         cleanup();
